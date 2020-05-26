@@ -10,13 +10,14 @@ import "cloud.google.com/go/storage"
 type Object struct {
 	BucketName      string `json:"-"`
 	Name            string `json:"-"`
+	CacheControl    string
 	ContentType     string
 	ContentEncoding string
 	Content         []byte
 	Crc32c          string
 	Md5Hash         string
 	ACL             []storage.ACLRule
-	Metadata    map[string]string
+	Metadata        map[string]string
 }
 
 // ID is useful for comparing objects

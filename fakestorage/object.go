@@ -21,13 +21,14 @@ import (
 type Object struct {
 	BucketName      string `json:"-"`
 	Name            string `json:"name"`
+	CacheControl    string `json:"cacheControl"`
 	ContentType     string `json:"contentType"`
 	ContentEncoding string `json:"contentEncoding"`
 	Content         []byte `json:"-"`
 	// Crc32c checksum of Content. calculated by server when it's upload methods are used.
-	Crc32c  string            `json:"crc32c,omitempty"`
-	Md5Hash string            `json:"md5hash,omitempty"`
-	ACL     []storage.ACLRule `json:"acl,omitempty"`
+	Crc32c   string            `json:"crc32c,omitempty"`
+	Md5Hash  string            `json:"md5hash,omitempty"`
+	ACL      []storage.ACLRule `json:"acl,omitempty"`
 	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
@@ -102,13 +103,14 @@ func toBackendObjects(objects []Object) []backend.Object {
 		backendObjects = append(backendObjects, backend.Object{
 			BucketName:      o.BucketName,
 			Name:            o.Name,
+			CacheControl:    o.CacheControl,
 			Content:         o.Content,
 			ContentType:     o.ContentType,
 			ContentEncoding: o.ContentEncoding,
 			Crc32c:          o.Crc32c,
 			Md5Hash:         o.Md5Hash,
 			ACL:             o.ACL,
-			Metadata:    o.Metadata,
+			Metadata:        o.Metadata,
 		})
 	}
 	return backendObjects
@@ -120,13 +122,14 @@ func fromBackendObjects(objects []backend.Object) []Object {
 		backendObjects = append(backendObjects, Object{
 			BucketName:      o.BucketName,
 			Name:            o.Name,
+			CacheControl:    o.CacheControl,
 			Content:         o.Content,
 			ContentType:     o.ContentType,
 			ContentEncoding: o.ContentEncoding,
 			Crc32c:          o.Crc32c,
 			Md5Hash:         o.Md5Hash,
 			ACL:             o.ACL,
-			Metadata:    o.Metadata,
+			Metadata:        o.Metadata,
 		})
 	}
 	return backendObjects
@@ -246,14 +249,15 @@ func (s *Server) rewriteObject(w http.ResponseWriter, r *http.Request) {
 	}
 	dstBucket := vars["destinationBucket"]
 	newObject := Object{
-		BucketName:  dstBucket,
-		Name:        vars["destinationObject"],
-		Content:     append([]byte(nil), obj.Content...),
-		Crc32c:      obj.Crc32c,
-		Md5Hash:     obj.Md5Hash,
-		ContentType: obj.ContentType,
-		ACL:         obj.ACL,
-		Metadata:    obj.Metadata,
+		BucketName:   dstBucket,
+		Name:         vars["destinationObject"],
+		CacheControl: obj.CacheControl,
+		Content:      append([]byte(nil), obj.Content...),
+		Crc32c:       obj.Crc32c,
+		Md5Hash:      obj.Md5Hash,
+		ContentType:  obj.ContentType,
+		ACL:          obj.ACL,
+		Metadata:     obj.Metadata,
 	}
 	s.CreateObject(newObject)
 	w.Header().Set("Content-Type", "application/json")

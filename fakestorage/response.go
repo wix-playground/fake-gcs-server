@@ -62,12 +62,13 @@ type objectResponse struct {
 	ID              string                         `json:"id"`
 	Bucket          string                         `json:"bucket"`
 	Size            int64                          `json:"size,string"`
+	CacheControl    string                         `json:"cacheControl,omitempty"`
 	ContentType     string                         `json:"contentType,omitempty"`
 	ContentEncoding string                         `json:"contentEncoding,omitempty"`
 	Crc32c          string                         `json:"crc32c,omitempty"`
 	ACL             []*storage.ObjectAccessControl `json:"acl,omitempty"`
 	Md5Hash         string                         `json:"md5hash,omitempty"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
+	Metadata        map[string]string              `json:"metadata,omitempty"`
 }
 
 func newObjectResponse(obj Object) objectResponse {
@@ -79,12 +80,13 @@ func newObjectResponse(obj Object) objectResponse {
 		Bucket:          obj.BucketName,
 		Name:            obj.Name,
 		Size:            int64(len(obj.Content)),
+		CacheControl:    obj.CacheControl,
 		ContentType:     obj.ContentType,
 		ContentEncoding: obj.ContentEncoding,
 		Crc32c:          obj.Crc32c,
 		Md5Hash:         obj.Md5Hash,
 		ACL:             acl,
-		Metadata:    obj.Metadata,
+		Metadata:        obj.Metadata,
 	}
 }
 

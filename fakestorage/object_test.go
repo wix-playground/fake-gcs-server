@@ -36,8 +36,9 @@ func TestServerClientObjectAttrs(t *testing.T) {
 		objectName      = "img/hi-res/party-01.jpg"
 		content         = "some nice content"
 		contentType     = "text/plain; charset=utf-8"
+		cacheControl    = "public"
 		contentEncoding = "gzip"
-		metaValue   = "MetaValue"
+		metaValue       = "MetaValue"
 	)
 	checksum := uint32Checksum([]byte(content))
 	hash := md5Hash([]byte(content))
@@ -45,12 +46,13 @@ func TestServerClientObjectAttrs(t *testing.T) {
 		{
 			BucketName:      bucketName,
 			Name:            objectName,
+			CacheControl:    cacheControl,
 			Content:         []byte(content),
 			ContentType:     contentType,
 			ContentEncoding: contentEncoding,
 			Crc32c:          encodedChecksum(uint32ToBytes(checksum)),
 			Md5Hash:         encodedHash(hash),
-			Metadata:    map[string]string{"MetaHeader": metaValue},
+			Metadata:        map[string]string{"MetaHeader": metaValue},
 		},
 	}
 
@@ -75,6 +77,10 @@ func TestServerClientObjectAttrs(t *testing.T) {
 			t.Errorf("wrong MetaHeader returned\nwant %s\ngot %v", metaValue, val)
 		}
 
+		if attrs.CacheControl != cacheControl {
+			t.Errorf("wrong cache-control\nwant %q\ngot  %q", cacheControl, attrs.CacheControl)
+		}
+
 		if attrs.ContentType != contentType {
 			t.Errorf("wrong content type\nwant %q\ngot  %q", contentType, attrs.ContentType)
 		}
@@ -93,16 +99,18 @@ func TestServerClientObjectAttrs(t *testing.T) {
 func TestServerClientObjectAttrsAfterCreateObject(t *testing.T) {
 	runServersTest(t, nil, func(t *testing.T, server *Server) {
 		const (
-			bucketName  = "prod-bucket"
-			objectName  = "video/hi-res/best_video_1080p.mp4"
-			contentType = "text/html; charset=utf-8"
-			metaValue   = "MetaValue"
+			bucketName   = "prod-bucket"
+			objectName   = "video/hi-res/best_video_1080p.mp4"
+			cacheControl = "public"
+			contentType  = "text/html; charset=utf-8"
+			metaValue    = "MetaValue"
 		)
 		server.CreateObject(Object{
-			BucketName:  bucketName,
-			Name:        objectName,
-			ContentType: contentType,
-			Metadata:    map[string]string{"MetaHeader": metaValue},
+			BucketName:   bucketName,
+			Name:         objectName,
+			CacheControl: cacheControl,
+			ContentType:  contentType,
+			Metadata:     map[string]string{"MetaHeader": metaValue},
 		})
 		client := server.Client()
 		objHandle := client.Bucket(bucketName).Object(objectName)
@@ -115,6 +123,9 @@ func TestServerClientObjectAttrsAfterCreateObject(t *testing.T) {
 		}
 		if attrs.Name != objectName {
 			t.Errorf("wrong object name\n want %q\ngot  %q", objectName, attrs.Name)
+		}
+		if attrs.CacheControl != cacheControl {
+			t.Errorf("wrong cache-control\n want %q\ngot  %q", cacheControl, attrs.CacheControl)
 		}
 		if attrs.ContentType != contentType {
 			t.Errorf("wrong content type\n want %q\ngot  %q", contentType, attrs.ContentType)
@@ -176,17 +187,19 @@ func TestServerClientObjectAttrsErrors(t *testing.T) {
 
 func TestServerClientObjectReader(t *testing.T) {
 	const (
-		bucketName  = "some-bucket"
-		objectName  = "items/data.txt"
-		content     = "some nice content"
-		contentType = "text/plain; charset=utf-8"
+		bucketName   = "some-bucket"
+		objectName   = "items/data.txt"
+		content      = "some nice content"
+		cacheControl = "public"
+		contentType  = "text/plain; charset=utf-8"
 	)
 	objs := []Object{
 		{
-			BucketName:  bucketName,
-			Name:        objectName,
-			Content:     []byte(content),
-			ContentType: contentType,
+			BucketName:   bucketName,
+			Name:         objectName,
+			Content:      []byte(content),
+			CacheControl: cacheControl,
+			ContentType:  contentType,
 		},
 	}
 
@@ -208,22 +221,27 @@ func TestServerClientObjectReader(t *testing.T) {
 		if ct := reader.Attrs.ContentType; ct != contentType {
 			t.Errorf("wrong content type\nwant %q\ngot  %q", contentType, ct)
 		}
+		if cc := reader.Attrs.CacheControl; cc != cacheControl {
+			t.Errorf("wrong cache-control\nwant %q\ngot  %q", cacheControl, cc)
+		}
 	})
 }
 
 func TestServerClientObjectRangeReader(t *testing.T) {
 	const (
-		bucketName  = "some-bucket"
-		objectName  = "items/data.txt"
-		content     = "some really nice but long content stored in my object"
-		contentType = "text/plain; charset=iso-8859"
+		bucketName   = "some-bucket"
+		objectName   = "items/data.txt"
+		content      = "some really nice but long content stored in my object"
+		cacheControl = "public"
+		contentType  = "text/plain; charset=iso-8859"
 	)
 	objs := []Object{
 		{
-			BucketName:  bucketName,
-			Name:        objectName,
-			Content:     []byte(content),
-			ContentType: contentType,
+			BucketName:   bucketName,
+			Name:         objectName,
+			CacheControl: cacheControl,
+			Content:      []byte(content),
+			ContentType:  contentType,
 		},
 	}
 
@@ -274,6 +292,9 @@ func TestServerClientObjectRangeReader(t *testing.T) {
 				if ct := reader.Attrs.ContentType; ct != contentType {
 					t.Errorf("wrong content type\nwant %q\ngot  %q", contentType, ct)
 				}
+				if cc := reader.Attrs.CacheControl; cc != cacheControl {
+					t.Errorf("wrong cache-control\nwant %q\ngot  %q", cacheControl, cc)
+				}
 			})
 		}
 	})
@@ -281,18 +302,20 @@ func TestServerClientObjectRangeReader(t *testing.T) {
 
 func TestServerClientObjectReaderAfterCreateObject(t *testing.T) {
 	const (
-		bucketName  = "staging-bucket"
-		objectName  = "items/data-overwritten.txt"
-		content     = "data inside the object"
-		contentType = "text/plain; charset=iso-8859"
+		bucketName   = "staging-bucket"
+		objectName   = "items/data-overwritten.txt"
+		cacheControl = "public"
+		content      = "data inside the object"
+		contentType  = "text/plain; charset=iso-8859"
 	)
 
 	runServersTest(t, nil, func(t *testing.T, server *Server) {
 		server.CreateObject(Object{
-			BucketName:  bucketName,
-			Name:        objectName,
-			Content:     []byte(content),
-			ContentType: contentType,
+			BucketName:   bucketName,
+			Name:         objectName,
+			CacheControl: cacheControl,
+			Content:      []byte(content),
+			ContentType:  contentType,
 		})
 		client := server.Client()
 		objHandle := client.Bucket(bucketName).Object(objectName)
@@ -310,6 +333,10 @@ func TestServerClientObjectReaderAfterCreateObject(t *testing.T) {
 		}
 		if ct := reader.Attrs.ContentType; ct != contentType {
 			t.Errorf("wrong content type\nwant %q\ngot  %q", contentType, ct)
+		}
+
+		if cc := reader.Attrs.CacheControl; cc != cacheControl {
+			t.Errorf("wrong cache-control\nwant %q\ngot  %q", cacheControl, cc)
 		}
 	})
 }
@@ -486,19 +513,21 @@ func TestServiceClientListObjectsBucketNotFound(t *testing.T) {
 
 func TestServiceClientRewriteObject(t *testing.T) {
 	const (
-		content     = "some content"
-		contentType = "text/plain; charset=utf-8"
+		content      = "some content"
+		cacheControl = "public"
+		contentType  = "text/plain; charset=utf-8"
 	)
 	checksum := uint32Checksum([]byte(content))
 	hash := md5Hash([]byte(content))
 	objs := []Object{
 		{
-			BucketName:  "first-bucket",
-			Name:        "files/some-file.txt",
-			Content:     []byte(content),
-			ContentType: contentType,
-			Crc32c:      encodedChecksum(uint32ToBytes(checksum)),
-			Md5Hash:     encodedHash(hash),
+			BucketName:   "first-bucket",
+			Name:         "files/some-file.txt",
+			CacheControl: cacheControl,
+			Content:      []byte(content),
+			ContentType:  contentType,
+			Crc32c:       encodedChecksum(uint32ToBytes(checksum)),
+			Md5Hash:      encodedHash(hash),
 		},
 	}
 
@@ -550,6 +579,9 @@ func TestServiceClientRewriteObject(t *testing.T) {
 				}
 				if attrs.ContentType != contentType {
 					t.Errorf("wrong content type\nwant %q\ngot  %q", contentType, attrs.ContentType)
+				}
+				if attrs.CacheControl != cacheControl {
+					t.Errorf("wrong cache-control\nwant %q\ngot  %q", cacheControl, attrs.CacheControl)
 				}
 				if !bytes.Equal(attrs.MD5, hash) {
 					t.Errorf("wrong hash returned\nwant %d\ngot   %d", hash, attrs.MD5)
