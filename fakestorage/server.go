@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/fsouza/fake-gcs-server/internal/backend"
+	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"google.golang.org/api/option"
 )
@@ -42,6 +44,8 @@ func NewServer(objects []Object) *Server {
 }
 
 // NewServerWithHostPort creates a new server that listens on a custom host and port
+//
+// Deprecated: use NewServerWithOptions.
 func NewServerWithHostPort(objects []Object, host string, port uint16) (*Server, error) {
 	return NewServerWithOptions(Options{
 		InitialObjects: objects,
@@ -50,10 +54,11 @@ func NewServerWithHostPort(objects []Object, host string, port uint16) (*Server,
 	})
 }
 
-// Options are used to configure the server on creation
+// Options are used to configure the server on creation.
 type Options struct {
 	InitialObjects []Object
 	StorageRoot    string
+	Scheme         string
 	Host           string
 	Port           uint16
 
@@ -74,9 +79,13 @@ type Options struct {
 	// https://<bucket>.storage.gcs.127.0.0.1.nip.io:4443>/<bucket>/<object>
 	// If unset, the default is "storage.googleapis.com", the XML API
 	PublicHost string
+
+	// Destination for writing log.
+	Writer io.Writer
 }
 
-// NewServerWithOptions creates a new server with custom options
+// NewServerWithOptions creates a new server configured according to the
+// provided options.
 func NewServerWithOptions(options Options) (*Server, error) {
 	s, err := newServer(options.InitialObjects, options.StorageRoot, options.ExternalURL, options.PublicHost)
 	if err != nil {
@@ -87,7 +96,16 @@ func NewServerWithOptions(options Options) (*Server, error) {
 		return s, nil
 	}
 
-	s.ts = httptest.NewUnstartedServer(s.mux)
+	var handler http.Handler = s.mux
+	if options.Writer != nil {
+		handler = handlers.LoggingHandler(options.Writer, s.mux)
+	}
+
+	s.ts = httptest.NewUnstartedServer(handler)
+	startFunc := s.ts.StartTLS
+	if options.Scheme == "http" {
+		startFunc = s.ts.Start
+	}
 	if options.Port != 0 {
 		addr := fmt.Sprintf("%s:%d", options.Host, options.Port)
 		l, err := net.Listen("tcp", addr)
@@ -96,10 +114,9 @@ func NewServerWithOptions(options Options) (*Server, error) {
 		}
 		s.ts.Listener.Close()
 		s.ts.Listener = l
-		s.ts.StartTLS()
-	} else {
-		s.ts.StartTLS()
 	}
+	startFunc()
+
 	s.setTransportToAddr(s.ts.Listener.Addr().String())
 	return s, nil
 }
@@ -159,6 +176,7 @@ func (s *Server) buildMuxer() {
 		r.Path("/b/{bucketName}").Methods("GET").HandlerFunc(s.getBucket)
 		r.Path("/b/{bucketName}/o").Methods("GET").HandlerFunc(s.listObjects)
 		r.Path("/b/{bucketName}/o").Methods("POST").HandlerFunc(s.insertObject)
+		r.Path("/b/{bucketName}/o/{objectName:.+}").Methods("PATCH").HandlerFunc(s.patchObject)
 		r.Path("/b/{bucketName}/o/{objectName:.+}/acl").Methods("GET").HandlerFunc(s.listObjectACL)
 		r.Path("/b/{bucketName}/o/{objectName:.+}/acl/{entity}").Methods("PUT").HandlerFunc(s.setObjectACL)
 		r.Path("/b/{bucketName}/o/{objectName:.+}").Methods("GET").HandlerFunc(s.getObject)
@@ -172,6 +190,10 @@ func (s *Server) buildMuxer() {
 	s.mux.Path("/download/storage/v1/b/{bucketName}/o/{objectName:.+}").Methods("GET").HandlerFunc(s.downloadObject)
 	s.mux.Path("/upload/storage/v1/b/{bucketName}/o").Methods("POST").HandlerFunc(s.insertObject)
 	s.mux.Path("/upload/resumable/{uploadId}").Methods("PUT", "POST").HandlerFunc(s.uploadFileContent)
+
+	// Signed URL Uploads
+	s.mux.Host(s.publicHost).Path("/{bucketName}/{objectName:.+}").Methods("POST", "PUT").HandlerFunc(s.insertObject)
+	s.mux.Host(bucketHost).Path("/{objectName:.+}").Methods("POST", "PUT").HandlerFunc(s.insertObject)
 }
 
 // Stop stops the server, closing all connections.

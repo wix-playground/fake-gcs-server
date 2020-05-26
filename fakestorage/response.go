@@ -6,8 +6,9 @@ package fakestorage
 
 import (
 	"net/http"
-	"sort"
+	"time"
 
+	"github.com/fsouza/fake-gcs-server/internal/backend"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/storage/v1"
 )
@@ -15,32 +16,39 @@ import (
 type listResponse struct {
 	Kind     string        `json:"kind"`
 	Items    []interface{} `json:"items"`
-	Prefixes []string      `json:"prefixes"`
+	Prefixes []string      `json:"prefixes,omitempty"`
 }
 
-func newListBucketsResponse(bucketNames []string) listResponse {
+func newListBucketsResponse(buckets []backend.Bucket) listResponse {
 	resp := listResponse{
 		Kind:  "storage#buckets",
-		Items: make([]interface{}, len(bucketNames)),
+		Items: make([]interface{}, len(buckets)),
 	}
-	sort.Strings(bucketNames)
-	for i, name := range bucketNames {
-		resp.Items[i] = newBucketResponse(name)
+	for i, bucket := range buckets {
+		resp.Items[i] = newBucketResponse(bucket)
 	}
 	return resp
 }
 
 type bucketResponse struct {
-	Kind string `json:"kind"`
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	Kind        string            `json:"kind"`
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	Versioning  *bucketVersioning `json:"versioning,omitempty"`
+	TimeCreated string            `json:"timeCreated,omitempty"`
 }
 
-func newBucketResponse(bucketName string) bucketResponse {
+type bucketVersioning struct {
+	Enabled bool `json:"enabled,omitempty"`
+}
+
+func newBucketResponse(bucket backend.Bucket) bucketResponse {
 	return bucketResponse{
-		Kind: "storage#bucket",
-		ID:   bucketName,
-		Name: bucketName,
+		Kind:        "storage#bucket",
+		ID:          bucket.Name,
+		Name:        bucket.Name,
+		Versioning:  &bucketVersioning{bucket.VersioningEnabled},
+		TimeCreated: bucket.TimeCreated.Format(time.RFC3339),
 	}
 }
 
@@ -66,8 +74,12 @@ type objectResponse struct {
 	ContentEncoding string                         `json:"contentEncoding,omitempty"`
 	Crc32c          string                         `json:"crc32c,omitempty"`
 	ACL             []*storage.ObjectAccessControl `json:"acl,omitempty"`
-	Md5Hash         string                         `json:"md5hash,omitempty"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
+	Md5Hash         string                         `json:"md5Hash,omitempty"`
+	TimeCreated     string                         `json:"timeCreated,omitempty"`
+	TimeDeleted     string                         `json:"timeDeleted,omitempty"`
+	Updated         string                         `json:"updated,omitempty"`
+	Generation      int64                          `json:"generation,string"`
+	Metadata        map[string]string              `json:"metadata,omitempty"`
 }
 
 func newObjectResponse(obj Object) objectResponse {
@@ -84,7 +96,11 @@ func newObjectResponse(obj Object) objectResponse {
 		Crc32c:          obj.Crc32c,
 		Md5Hash:         obj.Md5Hash,
 		ACL:             acl,
-		Metadata:    obj.Metadata,
+		Metadata:        obj.Metadata,
+		TimeCreated:     obj.Created.Format(time.RFC3339),
+		TimeDeleted:     obj.Deleted.Format(time.RFC3339),
+		Updated:         obj.Updated.Format(time.RFC3339),
+		Generation:      obj.Generation,
 	}
 }
 

@@ -26,9 +26,10 @@ import (
 const contentTypeHeader = "Content-Type"
 
 type multipartMetadata struct {
-	ContentType     string `json:"contentType"`
-	ContentEncoding string `json:"contentEncoding"`
-	Name            string `json:"name"`
+	ContentType     string            `json:"contentType"`
+	ContentEncoding string            `json:"contentEncoding"`
+	Name            string            `json:"name"`
+	Metadata        map[string]string `json:"metadata"`
 }
 
 type contentRange struct {
@@ -41,7 +42,7 @@ type contentRange struct {
 
 func (s *Server) insertObject(w http.ResponseWriter, r *http.Request) {
 	bucketName := mux.Vars(r)["bucketName"]
-	if err := s.backend.GetBucket(bucketName); err != nil {
+	if _, err := s.backend.GetBucket(bucketName); err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		err := newErrorResponse(http.StatusNotFound, "Not found", nil)
 		json.NewEncoder(w).Encode(err)
@@ -56,6 +57,17 @@ func (s *Server) insertObject(w http.ResponseWriter, r *http.Request) {
 	case "resumable":
 		s.resumableUpload(bucketName, w, r)
 	default:
+		// Support Signed URL Uploads
+		if r.URL.Query().Get("X-Goog-Algorithm") != "" {
+			switch r.Method {
+			case http.MethodPost:
+				s.resumableUpload(bucketName, w, r)
+			case http.MethodPut:
+				s.signedUpload(bucketName, w, r)
+			}
+
+			return
+		}
 		http.Error(w, "invalid uploadType", http.StatusBadRequest)
 	}
 }
@@ -84,7 +96,51 @@ func (s *Server) simpleUpload(bucketName string, w http.ResponseWriter, r *http.
 		Md5Hash:         encodedMd5Hash(data),
 		ACL:             getObjectACL(predefinedACL),
 	}
-	err = s.createObject(obj)
+	obj, err = s.createObject(obj)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(obj)
+}
+
+func (s *Server) signedUpload(bucketName string, w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	name := mux.Vars(r)["objectName"]
+	predefinedACL := r.URL.Query().Get("predefinedAcl")
+	contentEncoding := r.URL.Query().Get("contentEncoding")
+
+	// Load data from HTTP Headers
+	if contentEncoding == "" {
+		contentEncoding = r.Header.Get("Content-Encoding")
+	}
+
+	metaData := make(map[string]string)
+	for key := range r.Header {
+		lowerKey := strings.ToLower(key)
+		if metaDataKey := strings.TrimPrefix(lowerKey, "x-goog-meta-"); metaDataKey != lowerKey {
+			metaData[metaDataKey] = r.Header.Get(key)
+		}
+	}
+
+	data, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	obj := Object{
+		BucketName:      bucketName,
+		Name:            name,
+		Content:         data,
+		ContentType:     r.Header.Get(contentTypeHeader),
+		ContentEncoding: contentEncoding,
+		Crc32c:          encodedCrc32cChecksum(data),
+		Md5Hash:         encodedMd5Hash(data),
+		ACL:             getObjectACL(predefinedACL),
+		Metadata:        metaData,
+	}
+	obj, err = s.createObject(obj)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -189,26 +245,28 @@ func (s *Server) multipartUpload(bucketName string, w http.ResponseWriter, r *ht
 		Crc32c:          encodedCrc32cChecksum(content),
 		Md5Hash:         encodedMd5Hash(content),
 		ACL:             getObjectACL(predefinedACL),
+		Metadata:        metadata.Metadata,
 	}
-	err = s.createObject(obj)
+	obj, err = s.createObject(obj)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(obj)
 }
 
 func (s *Server) resumableUpload(bucketName string, w http.ResponseWriter, r *http.Request) {
-	objName := r.URL.Query().Get("name")
 	predefinedACL := r.URL.Query().Get("predefinedAcl")
 	contentEncoding := r.URL.Query().Get("contentEncoding")
+	metadata, err := loadMetadata(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	objName := r.URL.Query().Get("name")
 	if objName == "" {
-		metadata, err := loadMetadata(r.Body)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
 		objName = metadata.Name
 	}
 	obj := Object{
@@ -216,6 +274,7 @@ func (s *Server) resumableUpload(bucketName string, w http.ResponseWriter, r *ht
 		Name:            objName,
 		ContentEncoding: contentEncoding,
 		ACL:             getObjectACL(predefinedACL),
+		Metadata:        metadata.Metadata,
 	}
 	uploadID, err := generateUploadID()
 	if err != nil {
@@ -300,7 +359,7 @@ func (s *Server) uploadFileContent(w http.ResponseWriter, r *http.Request) {
 	}
 	if commit {
 		s.uploads.Delete(uploadID)
-		err = s.createObject(obj)
+		obj, err = s.createObject(obj)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

@@ -4,7 +4,11 @@
 
 package backend
 
-import "cloud.google.com/go/storage"
+import (
+	"fmt"
+
+	"cloud.google.com/go/storage"
+)
 
 // Object represents the object that is stored within the fake server.
 type Object struct {
@@ -16,10 +20,19 @@ type Object struct {
 	Crc32c          string
 	Md5Hash         string
 	ACL             []storage.ACLRule
-	Metadata    map[string]string
+	Metadata        map[string]string
+	Created         string
+	Deleted         string
+	Updated         string
+	Generation      int64
 }
 
-// ID is useful for comparing objects
+// ID is used for comparing objects.
 func (o *Object) ID() string {
-	return o.BucketName + "/" + o.Name
+	return fmt.Sprintf("%s#%d", o.IDNoGen(), o.Generation)
+}
+
+// IDNoGen does not consider the generation field.
+func (o *Object) IDNoGen() string {
+	return fmt.Sprintf("%s/%s", o.BucketName, o.Name)
 }

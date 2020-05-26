@@ -1,11 +1,12 @@
 module github.com/fsouza/fake-gcs-server
 
 require (
-	cloud.google.com/go/storage v1.4.0
-	github.com/google/go-cmp v0.3.1
-	github.com/gorilla/mux v1.7.3
-	github.com/sirupsen/logrus v1.4.2
-	google.golang.org/api v0.14.0
+	cloud.google.com/go/storage v1.8.0
+	github.com/google/go-cmp v0.4.1
+	github.com/gorilla/handlers v1.4.2
+	github.com/gorilla/mux v1.7.4
+	github.com/sirupsen/logrus v1.6.0
+	google.golang.org/api v0.25.0
 )
 
 go 1.13

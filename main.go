@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
 
 	"github.com/fsouza/fake-gcs-server/fakestorage"
@@ -32,7 +31,9 @@ func main() {
 
 	var emptyBuckets []string
 	opts := cfg.ToFakeGcsOptions()
-	opts.InitialObjects, emptyBuckets = generateObjectsFromFiles(logger, cfg.Seed)
+	if cfg.Seed != "" {
+		opts.InitialObjects, emptyBuckets = generateObjectsFromFiles(logger, cfg.Seed)
+	}
 
 	server, err := fakestorage.NewServerWithOptions(opts)
 	if err != nil {
@@ -40,7 +41,7 @@ func main() {
 	}
 	logger.Infof("server started at %s", server.URL())
 	for _, bucketName := range emptyBuckets {
-		server.CreateBucket(bucketName)
+		server.CreateBucketWithOpts(fakestorage.CreateBucketOpts{Name: bucketName})
 	}
 
 	ch := make(chan os.Signal, 1)
@@ -79,12 +80,14 @@ func generateObjectsFromFiles(logger *logrus.Logger, folder string) ([]fakestora
 
 func objectsFromBucket(localBucketPath, bucketName string) ([]fakestorage.Object, error) {
 	var objects []fakestorage.Object
-	err := filepath.Walk(localBucketPath, func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(localBucketPath, func(path string, info os.FileInfo, _ error) error {
 		if info.Mode().IsRegular() {
-			objectKey := strings.TrimLeft(strings.Replace(path, localBucketPath, "", 1), "/")
+			// Rel() should never return error since path always descend from localBucketPath
+			relPath, _ := filepath.Rel(localBucketPath, path)
+			objectKey := filepath.ToSlash(relPath)
 			fileContent, err := ioutil.ReadFile(path)
 			if err != nil {
-				return fmt.Errorf("could not read file %q: %v", path, err)
+				return fmt.Errorf("could not read file %q: %w", path, err)
 			}
 			objects = append(objects, fakestorage.Object{
 				BucketName: bucketName,

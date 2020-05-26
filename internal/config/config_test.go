@@ -9,6 +9,7 @@ import (
 
 	"github.com/fsouza/fake-gcs-server/fakestorage"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -29,6 +30,7 @@ func TestLoadConfig(t *testing.T) {
 				"-host", "127.0.0.1",
 				"-port", "443",
 				"-data", "/var/gcs",
+				"-scheme", "http",
 			},
 			expectedConfig: Config{
 				Seed:        "/var/gcs",
@@ -38,18 +40,20 @@ func TestLoadConfig(t *testing.T) {
 				externalURL: "https://myhost.example.com:8443",
 				host:        "127.0.0.1",
 				port:        443,
+				scheme:      "http",
 			},
 		},
 		{
 			name: "default parameters",
 			expectedConfig: Config{
-				Seed:        "/data",
+				Seed:        "",
 				backend:     "filesystem",
 				fsRoot:      "/storage",
 				publicHost:  "storage.googleapis.com",
 				externalURL: "",
 				host:        "0.0.0.0",
 				port:        4443,
+				scheme:      "https",
 			},
 		},
 		{
@@ -140,7 +144,8 @@ func TestToFakeGcsOptions(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			opts := test.config.ToFakeGcsOptions()
-			if diff := cmp.Diff(opts, test.expected); diff != "" {
+			ignWriter := cmpopts.IgnoreFields(fakestorage.Options{}, "Writer")
+			if diff := cmp.Diff(opts, test.expected, ignWriter); diff != "" {
 				t.Errorf("wrong set of options returned\nwant %#v\ngot  %#v\ndiff: %v", test.expected, opts, diff)
 			}
 		})

@@ -1,8 +1,8 @@
 module github.com/zigius/fake-gcs-server/examples/go-example
 
-go 1.12
+go 1.13
 
 require (
-	cloud.google.com/go/storage v1.4.0
-	google.golang.org/api v0.14.0
+	cloud.google.com/go/storage v1.8.0
+	google.golang.org/api v0.25.0
 )

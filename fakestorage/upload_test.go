@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/tls"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -47,14 +48,17 @@ func TestServerClientObjectWriter(t *testing.T) {
 			test := test
 			t.Run(test.testCase, func(t *testing.T) {
 				const contentType = "text/plain; charset=utf-8"
-				server.CreateBucket(test.bucketName)
+				server.CreateBucketWithOpts(CreateBucketOpts{Name: test.bucketName})
 				client := server.Client()
 
 				objHandle := client.Bucket(test.bucketName).Object(test.objectName)
 				w := objHandle.NewWriter(context.Background())
 				w.ChunkSize = test.chunkSize
-				w.Write([]byte(content))
 				w.ContentType = contentType
+				w.Metadata = map[string]string{
+					"foo": "bar",
+				}
+				w.Write([]byte(content))
 				err := w.Close()
 				if err != nil {
 					t.Fatal(err)
@@ -85,6 +89,9 @@ func TestServerClientObjectWriter(t *testing.T) {
 				}
 				if obj.ContentType != contentType {
 					t.Errorf("wrong content-type\nwant %q\ngot  %q", contentType, obj.ContentType)
+				}
+				if !reflect.DeepEqual(obj.Metadata, w.Metadata) {
+					t.Errorf("wrong meta data\nwant %+v\ngot  %+v", w.Metadata, obj.Metadata)
 				}
 			})
 		}
@@ -146,7 +153,7 @@ func TestServerClientObjectWriterBucketNotFound(t *testing.T) {
 func TestServerClientSimpleUpload(t *testing.T) {
 	server := NewServer(nil)
 	defer server.Stop()
-	server.CreateBucket("other-bucket")
+	server.CreateBucketWithOpts(CreateBucketOpts{Name: "other-bucket"})
 
 	const data = "some nice content"
 	const contentType = "text/plain"
@@ -184,10 +191,58 @@ func TestServerClientSimpleUpload(t *testing.T) {
 	checkChecksum(t, []byte(data), obj)
 }
 
+func TestServerClientSignedUpload(t *testing.T) {
+	server, err := NewServerWithOptions(Options{PublicHost: "127.0.0.1"})
+	if err != nil {
+		t.Fatalf("could not start server: %v", err)
+	}
+	defer server.Stop()
+	server.CreateBucketWithOpts(CreateBucketOpts{Name: "other-bucket"})
+	const data = "some nice content"
+	const contentType = "text/plain"
+	req, err := http.NewRequest("PUT", server.URL()+"/other-bucket/some/nice/object.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256", strings.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("X-Goog-Meta-Key", "Value")
+	client := http.Client{
+		Transport: &http.Transport{
+			// #nosec
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	expectedStatus := http.StatusOK
+	if resp.StatusCode != expectedStatus {
+		t.Errorf("wrong status code\nwant %d\ngot  %d", expectedStatus, resp.StatusCode)
+	}
+
+	obj, err := server.GetObject("other-bucket", "some/nice/object.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(obj.Content) != data {
+		t.Errorf("wrong content\nwant %q\ngot  %q", string(obj.Content), data)
+	}
+	if obj.ContentType != contentType {
+		t.Errorf("wrong content type\nwant %q\ngot  %q", contentType, obj.ContentType)
+	}
+	if want := map[string]string{"key": "Value"}; !reflect.DeepEqual(obj.Metadata, want) {
+		t.Errorf("wrong metadata\nwant %q\ngot  %q", want, obj.Metadata)
+	}
+	checkChecksum(t, []byte(data), obj)
+}
+
 func TestServerClientUploadWithPredefinedAclPublicRead(t *testing.T) {
 	server := NewServer(nil)
 	defer server.Stop()
-	server.CreateBucket("other-bucket")
+	server.CreateBucketWithOpts(CreateBucketOpts{Name: "other-bucket"})
 
 	const data = "some nice content"
 	const contentType = "text/plain"
@@ -247,7 +302,7 @@ func TestServerClientUploadWithPredefinedAclPublicRead(t *testing.T) {
 func TestServerClientSimpleUploadNoName(t *testing.T) {
 	server := NewServer(nil)
 	defer server.Stop()
-	server.CreateBucket("other-bucket")
+	server.CreateBucketWithOpts(CreateBucketOpts{Name: "other-bucket"})
 
 	const data = "some nice content"
 	req, err := http.NewRequest("POST", server.URL()+"/storage/v1/b/other-bucket/o?uploadType=media", strings.NewReader(data))
@@ -274,7 +329,7 @@ func TestServerClientSimpleUploadNoName(t *testing.T) {
 func TestServerInvalidUploadType(t *testing.T) {
 	server := NewServer(nil)
 	defer server.Stop()
-	server.CreateBucket("other-bucket")
+	server.CreateBucketWithOpts(CreateBucketOpts{Name: "other-bucket"})
 	const data = "some nice content"
 	req, err := http.NewRequest("POST", server.URL()+"/storage/v1/b/other-bucket/o?uploadType=bananas&name=some-object.txt", strings.NewReader(data))
 	if err != nil {
